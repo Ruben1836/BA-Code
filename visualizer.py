@@ -79,6 +79,56 @@ def analyze_step1_results(
     plt.show()
 
 
+def analyze_step2_results(
+    soc_ida_quarters: Iterable[float],
+    cha_quarters: Iterable[float],
+    dis_quarters: Iterable[float],
+    price_list_quarter: Iterable[float],
+    power_cap: float,
+    n_hours: int = 24,
+) -> None:
+    """Visualise step 2 intraday results."""
+    n_quarters = 4 * n_hours
+    charge_power = [cha * power_cap for cha in list(cha_quarters)[:n_quarters]]
+    discharge_power = [dis * power_cap for dis in list(dis_quarters)[:n_quarters]]
+
+    price_array = np.array(list(price_list_quarter)[:n_quarters])
+    soc_array = np.array(list(soc_ida_quarters)[:n_quarters])
+
+    local_min_idx = scipy.signal.argrelextrema(price_array, np.less)[0]
+    local_max_idx = scipy.signal.argrelextrema(price_array, np.greater)[0]
+
+    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(14, 14), sharex=True)
+
+    ax1.plot(range(n_quarters), price_array, label="Preis 15min (Step2)", color="black")
+    ax1.plot(local_min_idx, price_array[local_min_idx], "go", label="Minima")
+    ax1.plot(local_max_idx, price_array[local_max_idx], "ro", label="Maxima")
+    for i in range(n_quarters):
+        if charge_power[i] > 0:
+            ax1.scatter(i, price_array[i], marker="^", s=60, color="green", zorder=5)
+        if discharge_power[i] > 0:
+            ax1.scatter(i, price_array[i], marker="v", s=60, color="red", zorder=5)
+    ax1.set_ylabel("Preis (€/kWh)")
+    ax1.set_title("Step2: Intradaypreise")
+    ax1.legend()
+    ax1.grid(True)
+
+    ax2.bar(range(n_quarters), soc_array, label="State of Charge", color="tab:blue")
+    ax2.set_ylabel("State of Charge (kWh)")
+    ax2.set_title("Step2: Batterieladestand")
+    ax2.grid(True)
+
+    ax3.bar(range(n_quarters), charge_power, width=0.5, label="Ladeleistung", color="green")
+    ax3.bar(range(n_quarters), [-x for x in discharge_power], width=0.5, label="Entladeleistung", color="red")
+    ax3.axhline(0, color="black", linewidth=0.8)
+    ax3.set_xlabel("Viertelstunden")
+    ax3.set_ylabel("Leistung (kW)")
+    ax3.grid(True)
+
+    plt.tight_layout()
+    plt.show()
+
+
 def calculate_real_cycles(
     cha_quarters: Iterable[float],
     dis_quarters: Iterable[float],
@@ -106,9 +156,9 @@ def combine_charge_discharge(
     power_cap: float,
 ) -> list[float]:
     """Combine charge and discharge lists into one energy profile (kWh)."""
-    energy_profile = []
-    for cha, dis in zip(cha_quarters, dis_quarters):
-        energy_profile.append((cha - dis) * (power_cap / 4))
+    energy_profile = [
+        (cha - dis) * (power_cap / 4) for cha, dis in zip(cha_quarters, dis_quarters)
+    ]
     total_charged = sum(e for e in energy_profile if e > 0)
     total_discharged = sum(-e for e in energy_profile if e < 0)
     print(f"🔋 Gesamte geladen: {total_charged:.2f} kWh")
@@ -123,23 +173,49 @@ def auswertung_transaktionen_stuendlich(
     power_cap: float,
 ) -> pd.DataFrame:
     """Return a DataFrame summarising hourly transactions."""
-    daten = []
-    for stunde, (cha_pu, dis_pu, preis) in enumerate(zip(cha_daa_h, dis_daa_h, price_list_hourly), start=1):
-        geladen_kwh = cha_pu * power_cap
-        entladen_kwh = dis_pu * power_cap
-        if geladen_kwh > 0 or entladen_kwh > 0:
-            kosten = geladen_kwh * preis
-            einnahmen = entladen_kwh * preis
-            profit = einnahmen - kosten
-            daten.append({
-                "Stunde": stunde,
-                "Preis (€/kWh)": preis,
-                "Geladen (kWh)": geladen_kwh,
-                "Entladen (kWh)": entladen_kwh,
-                "Kosten (€)": kosten,
-                "Einnahmen (€)": einnahmen,
-                "Profit (€)": profit,
-            })
+    daten = [
+        {
+            "Stunde": stunde,
+            "Preis (€/kWh)": preis,
+            "Geladen (kWh)": cha_pu * power_cap,
+            "Entladen (kWh)": dis_pu * power_cap,
+            "Kosten (€)": cha_pu * power_cap * preis,
+            "Einnahmen (€)": dis_pu * power_cap * preis,
+            "Profit (€)": dis_pu * power_cap * preis - cha_pu * power_cap * preis,
+        }
+        for stunde, (cha_pu, dis_pu, preis) in enumerate(
+            zip(cha_daa_h, dis_daa_h, price_list_hourly), start=1
+        )
+        if cha_pu * power_cap > 0 or dis_pu * power_cap > 0
+    ]
+    df = pd.DataFrame(daten)
+    df.loc["Summe"] = df[["Geladen (kWh)", "Entladen (kWh)", "Kosten (€)", "Einnahmen (€)", "Profit (€)"]].sum()
+    print(df)
+    return df
+
+
+def auswertung_transaktionen_intraday(
+    cha_quarters: Iterable[float],
+    dis_quarters: Iterable[float],
+    price_list_quarter: Iterable[float],
+    power_cap: float,
+) -> pd.DataFrame:
+    """Return a DataFrame summarising quarter-hourly intraday transactions."""
+    daten = [
+        {
+            "Viertelstunde": q,
+            "Preis (€/kWh)": preis,
+            "Geladen (kWh)": cha_pu * power_cap / 4,
+            "Entladen (kWh)": dis_pu * power_cap / 4,
+            "Kosten (€)": cha_pu * power_cap / 4 * preis,
+            "Einnahmen (€)": dis_pu * power_cap / 4 * preis,
+            "Profit (€)": dis_pu * power_cap / 4 * preis - cha_pu * power_cap / 4 * preis,
+        }
+        for q, (cha_pu, dis_pu, preis) in enumerate(
+            zip(cha_quarters, dis_quarters, price_list_quarter), start=1
+        )
+        if cha_pu * power_cap / 4 > 0 or dis_pu * power_cap / 4 > 0
+    ]
     df = pd.DataFrame(daten)
     df.loc["Summe"] = df[["Geladen (kWh)", "Entladen (kWh)", "Kosten (€)", "Einnahmen (€)", "Profit (€)"]].sum()
     print(df)
@@ -265,11 +341,8 @@ def export_full_results_to_excel_premium(
             cell.font = Font(bold=True)
             cell.alignment = Alignment(horizontal="center")
         for column_cells in ws.columns:
-            max_length = 0
             column = column_cells[0].column_letter
-            for cell in column_cells:
-                if cell.value:
-                    max_length = max(max_length, len(str(cell.value)))
+            max_length = max((len(str(c.value)) for c in column_cells if c.value), default=0)
             ws.column_dimensions[column].width = max_length + 2
 
     ws_chart = wb.create_sheet("Diagramme")
