@@ -57,6 +57,18 @@ class optimizer:
         self.price_list_daa_q = np.repeat(self.price_list_daa, 4)
 
     @staticmethod
+    def _calc_can_charge(prices: list[float], eta_cha: float, eta_dis: float) -> list[int]:
+        """Return a binary list indicating profitable charging."""
+        best_future = [
+            max(prices[t:]) if t < len(prices) else prices[-1]
+            for t in range(len(prices))
+        ]
+        return [
+            1 if best_future[t] * eta_dis > prices[t] / eta_cha else 0
+            for t in range(len(prices))
+        ]
+
+    @staticmethod
     def _load_prices(path: str) -> list[float]:
         """Return a list of prices (€/kWh) from an Excel file."""
         xls = pd.ExcelFile(path)
@@ -94,14 +106,7 @@ class optimizer:
         max_soc = self.max_soc
 
         # Profit trigger
-        best_future_price = [
-            max(self.price_list_daa[t:]) if t < len(self.price_list_daa) else self.price_list_daa[-1]
-            for t in range(len(self.price_list_daa))
-        ]
-        can_charge = [
-            1 if best_future_price[t] * eta_dis > self.price_list_daa[t] / eta_cha else 0
-            for t in range(len(self.price_list_daa))
-        ]
+        can_charge = self._calc_can_charge(self.price_list_daa, eta_cha, eta_dis)
 
         # Sets
         model.T = pyo.RangeSet(1, n_hours)
@@ -205,14 +210,7 @@ class optimizer:
         )
 
         # Profit trigger similar as step1
-        best_future_price = [
-            max(self.price_list_ida[t:]) if t < len(self.price_list_ida) else self.price_list_ida[-1]
-            for t in range(len(self.price_list_ida))
-        ]
-        can_charge = [
-            1 if best_future_price[t] * eta_dis > self.price_list_ida[t] / eta_cha else 0
-            for t in range(len(self.price_list_ida))
-        ]
+        can_charge = self._calc_can_charge(self.price_list_ida, eta_cha, eta_dis)
         model.can_charge = pyo.Param(model.Q, initialize={q: can_charge[q - 1] for q in range(1, N + 1)}, within=pyo.Binary)
 
         # Variables
