@@ -144,6 +144,34 @@ def auswertung_transaktionen_stuendlich(
     return df
 
 
+def auswertung_transaktionen_intraday(
+    cha_quarters: Iterable[float],
+    dis_quarters: Iterable[float],
+    price_list_quarter: Iterable[float],
+    power_cap: float,
+) -> pd.DataFrame:
+    """Return a DataFrame summarising quarter-hourly intraday transactions."""
+    daten = [
+        {
+            "Viertelstunde": q,
+            "Preis (€/kWh)": preis,
+            "Geladen (kWh)": cha_pu * power_cap / 4,
+            "Entladen (kWh)": dis_pu * power_cap / 4,
+            "Kosten (€)": cha_pu * power_cap / 4 * preis,
+            "Einnahmen (€)": dis_pu * power_cap / 4 * preis,
+            "Profit (€)": dis_pu * power_cap / 4 * preis - cha_pu * power_cap / 4 * preis,
+        }
+        for q, (cha_pu, dis_pu, preis) in enumerate(
+            zip(cha_quarters, dis_quarters, price_list_quarter), start=1
+        )
+        if cha_pu * power_cap / 4 > 0 or dis_pu * power_cap / 4 > 0
+    ]
+    df = pd.DataFrame(daten)
+    df.loc["Summe"] = df[["Geladen (kWh)", "Entladen (kWh)", "Kosten (€)", "Einnahmen (€)", "Profit (€)"]].sum()
+    print(df)
+    return df
+
+
 # ---------------------------------------------------------------------------
 # Export functions
 # ---------------------------------------------------------------------------

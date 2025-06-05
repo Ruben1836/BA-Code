@@ -12,6 +12,7 @@ from visualizer import (
     export_all_time_series_with_charts,
     export_full_results_to_excel_premium,
     auswertung_transaktionen_stuendlich,
+    auswertung_transaktionen_intraday,
 )
 
 # ---------------------------------------------------------------------------
@@ -116,6 +117,13 @@ def main() -> None:
         cha_daa_h,
         dis_daa_h,
         opt.price_list_daa,
+        opt.power_cap,
+    )
+
+    auswertung_transaktionen_intraday(
+        combined_cha,
+        combined_dis,
+        opt.price_list_ida,
         opt.power_cap,
     )
 
