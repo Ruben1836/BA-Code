@@ -106,9 +106,9 @@ def combine_charge_discharge(
     power_cap: float,
 ) -> list[float]:
     """Combine charge and discharge lists into one energy profile (kWh)."""
-    energy_profile = []
-    for cha, dis in zip(cha_quarters, dis_quarters):
-        energy_profile.append((cha - dis) * (power_cap / 4))
+    energy_profile = [
+        (cha - dis) * (power_cap / 4) for cha, dis in zip(cha_quarters, dis_quarters)
+    ]
     total_charged = sum(e for e in energy_profile if e > 0)
     total_discharged = sum(-e for e in energy_profile if e < 0)
     print(f"🔋 Gesamte geladen: {total_charged:.2f} kWh")
@@ -123,23 +123,21 @@ def auswertung_transaktionen_stuendlich(
     power_cap: float,
 ) -> pd.DataFrame:
     """Return a DataFrame summarising hourly transactions."""
-    daten = []
-    for stunde, (cha_pu, dis_pu, preis) in enumerate(zip(cha_daa_h, dis_daa_h, price_list_hourly), start=1):
-        geladen_kwh = cha_pu * power_cap
-        entladen_kwh = dis_pu * power_cap
-        if geladen_kwh > 0 or entladen_kwh > 0:
-            kosten = geladen_kwh * preis
-            einnahmen = entladen_kwh * preis
-            profit = einnahmen - kosten
-            daten.append({
-                "Stunde": stunde,
-                "Preis (€/kWh)": preis,
-                "Geladen (kWh)": geladen_kwh,
-                "Entladen (kWh)": entladen_kwh,
-                "Kosten (€)": kosten,
-                "Einnahmen (€)": einnahmen,
-                "Profit (€)": profit,
-            })
+    daten = [
+        {
+            "Stunde": stunde,
+            "Preis (€/kWh)": preis,
+            "Geladen (kWh)": cha_pu * power_cap,
+            "Entladen (kWh)": dis_pu * power_cap,
+            "Kosten (€)": cha_pu * power_cap * preis,
+            "Einnahmen (€)": dis_pu * power_cap * preis,
+            "Profit (€)": dis_pu * power_cap * preis - cha_pu * power_cap * preis,
+        }
+        for stunde, (cha_pu, dis_pu, preis) in enumerate(
+            zip(cha_daa_h, dis_daa_h, price_list_hourly), start=1
+        )
+        if cha_pu * power_cap > 0 or dis_pu * power_cap > 0
+    ]
     df = pd.DataFrame(daten)
     df.loc["Summe"] = df[["Geladen (kWh)", "Entladen (kWh)", "Kosten (€)", "Einnahmen (€)", "Profit (€)"]].sum()
     print(df)
@@ -265,11 +263,8 @@ def export_full_results_to_excel_premium(
             cell.font = Font(bold=True)
             cell.alignment = Alignment(horizontal="center")
         for column_cells in ws.columns:
-            max_length = 0
             column = column_cells[0].column_letter
-            for cell in column_cells:
-                if cell.value:
-                    max_length = max(max_length, len(str(cell.value)))
+            max_length = max((len(str(c.value)) for c in column_cells if c.value), default=0)
             ws.column_dimensions[column].width = max_length + 2
 
     ws_chart = wb.create_sheet("Diagramme")
